@@ -1,4 +1,8 @@
 #!/bin/python
+
+# this script requires that signal_string and width_array binary
+# exists in the range of $PATH
+
 import subprocess
 import os
 import hashlib
@@ -42,15 +46,32 @@ def sendSignal(query_str):
     if signal_exists == False:
         print("log: target signal isn't found on DB. add it to DB")
 
+        # generate raw_code
+        converter = subprocess.Popen(
+            'signal_string -d | width_array | cut -d" " -f 2-',
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, shell=True)
+        conv_out, conv_err = converter.communicate(query_str)
+        raw_code = conv_out.decode('utf-8')
+        print('log: generate raw_code:')
+        print(raw_code)
+
+        # edit lircd.conf
+        conf_before = None
+        with open('/etc/lirc/lircd.conf', encoding='utf-8') as conf:
+            conf_before = conf.read()
+        pattern = re.compile('begin raw_codes')
+        insert_point = g
+        conf_after = conf.before
+        print(conf_before)
+        insert_line = conf_lines.index('begin raw_codes')
+        with open('/etc/lirc/lircd.conf', encoding='utf-8', mode='w') as conf:
+
+
 # send signal with lirc:irsend
 
-# # generate raw_code
-# raw_code=`echo "${QUERY_STRING}" | \
-#           /srv/http/signal_string -d | \
-#           /srv/http/width_array`
-# # remove pulse_width
-# raw_code=`echo $raw_code | sed 's/^[0-9]* //'`
-# 
+
+
+
 # # edit lircd.conf
 # insert_line=`cat $conf_file | grep -n "end raw_codes" | sed 's/:.*$//'`
 # sudo sed -i -e "${insert_line}i ${raw_code}" $conf_file
