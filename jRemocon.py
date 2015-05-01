@@ -1,29 +1,49 @@
 #!/bin/python
+import subprocess
 import os
+import hashlib
 
 
 def sendSignal(query_str):
-    print("sendSignal")
-    return
-    # generate signal hash
-    
-    # check whether requested signal exists in lirc-DB
-    
-    # add the signal to lirc-DB
-    
-    # send signal with lirc:irsend
+    print("log: sendSignal")
 
+# generate signal hash
+    if query_str == None:
+        print("error: target signal is not specified.")
+        return
+    signal_hash = hashlib.sha512(query_str).hexdigest()
+    print("log: generate hash : " + signal_hash)
+    
+# check whether requested signal exists in lirc-DB
+    lirc_pipe = subprocess.Popen(['irsend', 'LIST', 'jremocon', signal_hash],
+                                 stdout=subprocess.PIPE,
+                                 stderr=subprocess.PIPE)
+    lirc_stdout, lirc_stderr = lirc_pipe.communicate()
+    lirc_out = (lirc_stdout + lirc_stderr).decode('utf-8')
 
-# lirc_opname=`echo $QUERY_STRING | sha512sum | sed 's/\ //g'`
-# 
-# if irsend LIST "jremocon" "$lirc_opname" &> /dev/null ; then
-#     irsend SEND_ONCE "jremocon" "$lirc_opname" && echo "send ok"
-#     exit
-# fi
-# 
-# # if signal isn't found in lircd.conf ####################
-# echo "info : signal isn't found on DB. genarate data."
-# 
+    signal_exists = None
+    if lirc_pipe.returncode == 0:
+        signal_exists = True
+    elif 'irsend: unknown command' in lirc_out:
+        # target signal isn't found on lirc-DB
+        signal_exists = False
+    elif lirc_out == "":
+        print("error: irsend returns no response. lirc-DB may be broken.")
+        return
+    elif 'irsend: could not connect to socket' in lirc_out:
+        print('error: lircd may not run.')
+        return
+    else:
+        print('error: irsend returns unexpected error:')
+        print(lirc_out)
+        return
+
+# add the signal to lirc-DB, if it isn't found on DB
+    if signal_exists == False:
+        print("log: target signal isn't found on DB. add it to DB")
+
+# send signal with lirc:irsend
+
 # # generate raw_code
 # raw_code=`echo "${QUERY_STRING}" | \
 #           /srv/http/signal_string -d | \
@@ -53,6 +73,9 @@ def clearCache(query_str):
     print("clearCache")
     return
 
+def restartLirc(query_str):
+    print("restartLirc")
+    return
 
 def showHelp(query_str):
     print("showHelp")
@@ -60,14 +83,17 @@ def showHelp(query_str):
 
 
 # cgi entry point ##############################################################
-path_functions = {'/'         : showHelp,
-                  '/send'     : sendSignal,
-                  '/generate' : generateSignalString,
-                  '/clear'    : clearCache}
+path_functions = {'/'              : showHelp,
+                  '/help'          : showHelp,
+                  '/send'          : sendSignal,
+                  '/lirc/generate' : generateSignalString,
+                  '/lirc/clear'    : clearCache,
+                  '/lirc/restart'  : restartLirc}
 
 req_path = os.environ.get('PATH_INFO')
-query_str = os.environ.get('QUERY_STRING')
 if req_path == None: req_path = '/'
+query_str = os.environ.get('QUERY_STRING')
+if query_str != None: query_str = query_str.encode('utf-8')
 
 print("Content-type: text/plain")
 print("")
