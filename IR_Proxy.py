@@ -1,4 +1,8 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
 from wsgiref.simple_server import make_server
+import mysql.connector
 import datetime
 import json
 import sys
@@ -40,10 +44,15 @@ class IRProxy(object):
 #TODO: impl
         return ""
     def requestExec(self, query_string, environ):
+#TODO: impl
         return ""
     def registerSignal(self, query_string, environ):
         return ""
     def generateSignal(self, query_string, environ):
+        # TODO: these parameters are to be read from query param
+        reader_address = '192.168.0.34'
+        width_ref = 425
+
         return ""
 
 # entry point ------------------------------------------------------------------
