@@ -9,6 +9,7 @@ import threading
 import io
 
 isLog = True
+url_prefix = 'jRemocon'
 port_num = 8080
 lircd_conf = '/etc/lirc/lircd.conf'
 lircd_conf_skel = '/etc/lirc/lircd.conf.skel'
@@ -16,7 +17,10 @@ lircd_conf_skel = '/etc/lirc/lircd.conf.skel'
 class jRemocon(object):
     
     def __init__(self):
+#TODO: use alternative instead of dict
         self.path_functions = {
+            '' : (self.showHelp,
+                ('show this page.',)),
             '/' : (self.showHelp,
                 ('show this page.',)),
             '/help' : (self.showHelp,
@@ -33,12 +37,15 @@ class jRemocon(object):
     def __call__(self, environ, start_response):
         path = environ['PATH_INFO']
         query = environ['QUERY_STRING']
-        # headers = [('Content-type', 'application/json; charset=utf-8')]
         headers = [('Content-type', 'text/plain; charset=utf-8')]
 
-        if path in self.path_functions:
+        method = None
+        if path.startswith('/' + url_prefix):
+            method = path.partition(url_prefix)[2]
+
+        if method in self.path_functions:
             start_response('200 OK', headers)
-            result = self.path_functions[path][0](query)
+            result = self.path_functions[method][0](query)
             return [result.getvalue().encode('utf-8')]
         else:
             start_response('404 Not found', headers)
