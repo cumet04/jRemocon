@@ -6,7 +6,6 @@ import subprocess
 import hashlib
 import signal
 import threading
-import shutil
 import io
 
 isLog = True
@@ -113,7 +112,19 @@ class jRemocon(object):
     def clearCache(self, query_str):
         result = io.StringIO()
         printLog("clearCache")
-        shutil.copy(lircd_conf_skel, lircd_conf)
+
+        new_conf = io.StringIO()
+        with open(lircd_conf, 'r') as conf_file:
+            isSignal = False
+            for line in conf_file:
+                if 'end raw_codes' in line: isSignal = False
+                if isSignal == False: new_conf.write(line)
+                if 'begin raw_codes' in line: isSignal = True
+        with open(lircd_conf, 'w') as conf_file:
+            # write clean conf
+            conf_file.seek(0)
+            conf_file.write(new_conf.getvalue())
+
         self.restartLirc(None)
         print('copy skeleton to original conf.', file=result)
         return result
@@ -122,13 +133,13 @@ class jRemocon(object):
     def restartLirc(self, query_str):
         result = io.StringIO()
         printLog("restartLirc")
-        try:
-            # Ideally, pidof -> (error check) -> kill should be done.
-            subprocess.check_call(['sudo', 'killall', 'lircd'])
-        except Exception:
-            # if lircd daemon doesn't exist, ignore exception
-            pass
+
+        pidof = subprocess.Popen(['pidof', 'lircd'])
+        pidof.wait()
+        if pidof.returncode == 0:
+            subprocess.check_call(['sudo', 'pkill', 'lircd'])
         subprocess.check_call(['sudo', 'lircd'])
+
         print('restart lircd.', file=result)
         return result
 
