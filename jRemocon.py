@@ -2,23 +2,21 @@
 # -*- coding: utf-8 -*-
 
 from wsgiref.simple_server import make_server
-import datetime
 import subprocess
-import json
-import sys
 import hashlib
-import time
 import signal
 import threading
 import shutil
 import io
 
+isLog = True
+port_num = 8080
+lircd_conf = '/etc/lirc/lircd.conf'
+lircd_conf_skel = '/etc/lirc/lircd.conf.skel'
+
 class jRemocon(object):
     
     def __init__(self):
-        self.isLog = True
-        self.lircd_conf = '/etc/lirc/lircd.conf'
-        self.lircd_conf_skel = '/etc/lirc/lircd.conf.skel'
         self.path_functions = {
             '/' : (self.showHelp,
                 ('show this page.',)),
@@ -47,17 +45,15 @@ class jRemocon(object):
             start_response('404 Not found', headers)
             return ['404 Not found'.encode("utf-8")]
 
-    def printLog(self, message):
-        if self.isLog: print("log: " + message)
 
 # API functions
     def sendSignal(self, query_str):
-        self.printLog("sendSignal")
+        printLog("sendSignal")
 
         if query_str == None:
             return io.StringIO("error: target signal is not specified.")
         signal_hash = hashlib.sha512(query_str.encode('utf-8')).hexdigest()
-        self.printLog("generate hash : " + signal_hash)
+        printLog("generate hash : " + signal_hash)
 
         # check whether requested signal exists in lirc-DB
         lirc_pipe = subprocess.Popen(['irsend', 'LIST', 'jremocon', signal_hash],
@@ -66,6 +62,7 @@ class jRemocon(object):
         lirc_stdout, lirc_stderr = lirc_pipe.communicate()
         lirc_out = (lirc_stdout + lirc_stderr).decode('utf-8')
  
+        # error check
         signal_exists = None
         if lirc_pipe.returncode == 0:
             signal_exists = True
@@ -85,7 +82,7 @@ class jRemocon(object):
 
         # add signal to DB
         if signal_exists == False:
-            self.printLog("target signal isn't found on DB. add it to DB")
+            printLog("target signal isn't found on DB. add it to DB")
 
             # generate lirc raw_code
             gen_command = 'signal_string -d | width_array | cut -d" " -f 2-'
@@ -95,7 +92,7 @@ class jRemocon(object):
             raw_code = stdout.decode('utf-8')
 
             # append the code to lircd.conf
-            conf_file = open(self.lircd_conf, 'r+')
+            conf_file = open(lircd_conf, 'r+')
             new_conf = io.StringIO()
             for line in conf_file:
                 new_conf.write(line)
@@ -112,17 +109,19 @@ class jRemocon(object):
         subprocess.Popen(['irsend', 'SEND_ONCE', 'jremocon', signal_hash])
         return io.StringIO('execute irsend')
 
+
     def clearCache(self, query_str):
         result = io.StringIO()
-        self.printLog("clearCache")
-        shutil.copy(self.lircd_conf_skel, self.lircd_conf)
+        printLog("clearCache")
+        shutil.copy(lircd_conf_skel, lircd_conf)
         self.restartLirc(None)
         print('copy skeleton to original conf.', file=result)
         return result
 
+
     def restartLirc(self, query_str):
         result = io.StringIO()
-        self.printLog("restartLirc")
+        printLog("restartLirc")
         try:
             # Ideally, pidof -> (error check) -> kill should be done.
             subprocess.check_call(['sudo', 'killall', 'lircd'])
@@ -133,8 +132,9 @@ class jRemocon(object):
         print('restart lircd.', file=result)
         return result
 
+
     def showHelp(self, query_str):
-        self.printLog("showHelp")
+        printLog("showHelp")
         result = io.StringIO()
         for api in self.path_functions:
             print('- ' + api, file=result)
@@ -146,10 +146,13 @@ class jRemocon(object):
 
 # entry point ------------------------------------------------------------------
 
+def printLog(message):
+    if isLog: print("log: " + message)
+
 application = jRemocon()
 
 if __name__ == '__main__':
-    server = make_server('', 8080, application)
+    server = make_server('', port_num, application)
     signal.signal(signal.SIGINT, lambda n,f : server.shutdown())
     t = threading.Thread(target=server.serve_forever)
     t.start()
