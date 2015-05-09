@@ -7,26 +7,30 @@ import subprocess
 import json
 import sys
 import hashlib
+import time
 import signal
 import threading
+import shutil
 import io
 
 class jRemocon(object):
     
     def __init__(self):
         self.isLog = True
+        self.lircd_conf = '/etc/lirc/lircd.conf'
+        self.lircd_conf_skel = '/etc/lirc/lircd.conf.skel'
         self.path_functions = {
             '/' : (self.showHelp,
-                ('show this help page.',)),
+                ('show this page.',)),
             '/help' : (self.showHelp,
-                ('show this help page.',)),
+                ('show this page.',)),
             '/send' : (self.sendSignal,
                 ('emit specified signal as infrared signal.',
                 'usage : /send?pulse={pulsewidth}&signal={signalstring}')),
             '/lirc/clear' : (self.clearCache,
-                ('',)),
+                ("clear lirc's cache DB (/etc/lirc/lircd.conf) and restart lirc daemon.",)),
             '/lirc/restart' : (self.restartLirc,
-                ('',))
+                ('restart lirc daemon.',)),
             }
 
     def __call__(self, environ, start_response):
@@ -82,7 +86,27 @@ class jRemocon(object):
         # add signal to DB
         if signal_exists == False:
             self.printLog("target signal isn't found on DB. add it to DB")
-            subprocess.Popen(['bash', 'jRemocon_append.sh', query_str])
+
+            # generate lirc raw_code
+            gen_command = 'signal_string -d | width_array | cut -d" " -f 2-'
+            generate = subprocess.Popen(['bash', '-c', gen_command],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            (stdout, stderr) = generate.communicate(query_str.encode('utf-8'))
+            raw_code = stdout.decode('utf-8')
+
+            # append the code to lircd.conf
+            conf_file = open(self.lircd_conf, 'r+')
+            new_conf = io.StringIO()
+            for line in conf_file:
+                new_conf.write(line)
+                if 'begin raw_codes' in line:
+                    new_conf.write("name " + signal_hash + "\n")
+                    new_conf.write(raw_code)
+            conf_file.seek(0)
+            conf_file.write(new_conf.getvalue())
+            conf_file.close()
+
+            self.restartLirc(None)
 
         # send signal with irsend
         subprocess.Popen(['irsend', 'SEND_ONCE', 'jremocon', signal_hash])
@@ -91,15 +115,22 @@ class jRemocon(object):
     def clearCache(self, query_str):
         result = io.StringIO()
         self.printLog("clearCache")
-        shutil.copy('/etc/lirc/lircd.conf.skel', '/etc/lirc/lircd.conf')
+        shutil.copy(self.lircd_conf_skel, self.lircd_conf)
+        self.restartLirc(None)
         print('copy skeleton to original conf.', file=result)
         return result
 
     def restartLirc(self, query_str):
         result = io.StringIO()
         self.printLog("restartLirc")
-        subprocess.Popen(['bash', 'jRemocon_restartLirc.sh'])
-        print('run restart script.', file=result)
+        try:
+            # Ideally, pidof -> (error check) -> kill should be done.
+            subprocess.check_call(['sudo', 'killall', 'lircd'])
+        except Exception:
+            # if lircd daemon doesn't exist, ignore exception
+            pass
+        subprocess.check_call(['sudo', 'lircd'])
+        print('restart lircd.', file=result)
         return result
 
     def showHelp(self, query_str):
@@ -108,7 +139,8 @@ class jRemocon(object):
         for api in self.path_functions:
             print('- ' + api, file=result)
             for line in self.path_functions[api][1]:
-                print('  ' + line + '\n', file=result)
+                print('  ' + line, file=result)
+            print('', file=result)
         return result
 
 
