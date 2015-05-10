@@ -6,6 +6,7 @@ from cgi import parse_qs
 from urllib.request import urlopen
 import mysql.connector
 import datetime
+import textwrap
 import io
 import json
 import sys
@@ -27,19 +28,12 @@ class IRProxy(object):
     
     def __init__(self):
         self.path_functions = {
-                '': (self.showHelp,
-                    ('show this message.',)),
-                '/': (self.showHelp,
-                    ('show this message.',)),
-                '/help': (self.showHelp,
-                    ('show this message.',)),
-                '/request': (self.requestExec,
-                    ('request appliance control to jRemocon.',
-                     'usage: /request?ip={jRemocon IP}&deviceid={target id}&operation={operation}')),
-                '/db/register': (self.registerSignal,
-                    ('not implemented.',)),
-                '/db/list': (self.listSignalDB,
-                    ('list all signal data on SignalDB.',))
+                '': self.showHelp,
+                '/': self.showHelp,
+                '/help': self.showHelp,
+                '/request': self.requestExec,
+                '/db/register': self.registerSignal,
+                '/db/list': self.listSignalDB
             }
 
     def __call__(self, environ, start_response):
@@ -53,7 +47,7 @@ class IRProxy(object):
 
         if method in self.path_functions:
             start_response('200 OK', headers)
-            result = self.path_functions[method][0](query)
+            result = self.path_functions[method](query)
             return [result.getvalue().encode('utf-8')]
         else:
             start_response('404 Not found', headers)
@@ -62,16 +56,23 @@ class IRProxy(object):
 
 # API functions ----------------------------------------------------------------
     def showHelp(self, query_param):
+        """
+        show this help message.
+        """
         printLog("showHelp")
         result = io.StringIO()
         for api in self.path_functions:
-            print('- ' + api, file=result)
-            for line in self.path_functions[api][1]:
-                print('  ' + line, file=result)
-            print('', file=result)
+            print('- ' + api, file=result, end="")
+            print(textwrap.dedent(self.path_functions[api].__doc__), file=result)
+#             for line in self.path_functions[api][1]:
+#                 print('  ' + line, file=result)
         return result
 
     def requestExec(self, query_param):
+        """
+        request appliance control to jRemocon.
+        usage: /request?ip={jRemocon IP}&deviceid={target id}&operation={operation}
+        """
         # parameter exist check
         if not 'ip' in query_param:
             return io.StringIO('error: parameter not found : ip')
@@ -105,10 +106,16 @@ class IRProxy(object):
 
 
     def registerSignal(self, query_param):
+        """
+        not implemented.
+        """
         return io.StringIO("registerSignal")
 
 
     def listSignalDB(self, query_param):
+        """
+        list all signal data on SignalDB.
+        """
         result = io.StringIO()
 #TODO: error handling
         connect = mysql.connector.connect(user=db_user, password=db_pass,
@@ -130,9 +137,9 @@ class IRProxy(object):
 def printLog(message):
     if isLog: print("log: " + message)
 
-application = IRProxy()
 
 if __name__ == '__main__':
+    application = IRProxy()
     server = make_server('', port_num, application)
     signal.signal(signal.SIGINT, lambda n,f : server.shutdown())
     t = threading.Thread(target=server.serve_forever)
