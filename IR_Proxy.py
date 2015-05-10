@@ -15,7 +15,8 @@ import threading
 isLog = True
 url_prefix = 'IRProxy'
 port_num = 8080
-db_host = 'localhost'
+# db_host = 'localhost'
+db_host = '192.168.100.182'
 db_user = 'inomoto'
 db_pass = 'inomoto'
 db_name = 'testdb'
@@ -33,9 +34,12 @@ class IRProxy(object):
                 '/help': (self.showHelp,
                     ('show this message.',)),
                 '/request': (self.requestExec,
-                    ('',)),
-                '/register': (self.registerSignal,
-                    ('',))
+                    ('request appliance control to jRemocon.',
+                     'usage: /request?ip={jRemocon IP}&deviceid={target id}&operation={operation}')),
+                '/db/register': (self.registerSignal,
+                    ('not implemented.',)),
+                '/db/list': (self.listSignalDB,
+                    ('list all signal data on SignalDB.',))
             }
 
     def __call__(self, environ, start_response):
@@ -71,12 +75,12 @@ class IRProxy(object):
         # parameter exist check
         if not 'ip' in query_param:
             return io.StringIO('error: parameter not found : ip')
-        if not 'device' in query_param:
-            return io.StringIO('error: parameter not found : device')
+        if not 'deviceid' in query_param:
+            return io.StringIO('error: parameter not found : deviceid')
         if not 'operation' in query_param:
             return io.StringIO('error: parameter not found : operation')
         ip = query_param['ip'][0]
-        device = query_param['device'][0]
+        device = query_param['deviceid'][0]
         operation = query_param['operation'][0]
 
         # query signal
@@ -102,6 +106,24 @@ class IRProxy(object):
 
     def registerSignal(self, query_param):
         return io.StringIO("registerSignal")
+
+
+    def listSignalDB(self, query_param):
+        result = io.StringIO()
+#TODO: error handling
+        connect = mysql.connector.connect(user=db_user, password=db_pass,
+                host=db_host, database=db_name, charset=db_charset)
+        sql_cursor = connect.cursor()
+        # sql_query= "select DeviceClassID,Operation,Description " + \
+        sql_query= "select * " + \
+                   "from DeviceOperation"
+        sql_cursor.execute(sql_query)
+        signals = sql_cursor.fetchall()
+
+        for item in signals:
+            print(item, file=result)
+        return result
+
 
 # entry point ------------------------------------------------------------------
 
