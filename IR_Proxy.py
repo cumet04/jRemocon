@@ -8,21 +8,12 @@ import mysql.connector
 import datetime
 import textwrap
 import io
+import os
 import json
 import sys
 import signal
 import threading
 
-isLog = True
-url_prefix = 'IRProxy'
-port_num = 8080
-# db_host = 'localhost'
-db_host = '192.168.100.182'
-db_user = 'inomoto'
-db_pass = 'inomoto'
-db_name = 'testdb'
-db_charset = 'utf8'
-jRemocon_uri = 'http://192.168.0.34:8080/jRemocon/send?{0}'
 
 class IRProxy(object):
     
@@ -42,9 +33,11 @@ class IRProxy(object):
         headers = [('Content-type', 'text/plain; charset=utf-8')]
 
         method = None
+        # eliminate path prefix from PATH_INFO.
         if path.startswith('/' + url_prefix):
             method = path.partition(url_prefix)[2]
 
+        # execute API function if the requested API exists.
         if method in self.path_functions:
             start_response('200 OK', headers)
             result = self.path_functions[method](query)
@@ -64,8 +57,6 @@ class IRProxy(object):
         for api in self.path_functions:
             print('- ' + api, file=result, end="")
             print(textwrap.dedent(self.path_functions[api].__doc__), file=result)
-#             for line in self.path_functions[api][1]:
-#                 print('  ' + line, file=result)
         return result
 
     def requestExec(self, query_param):
@@ -86,8 +77,10 @@ class IRProxy(object):
 
         # query signal
 #TODO: error handling
-        connect = mysql.connector.connect(user=db_user, password=db_pass,
-                host=db_host, database=db_name, charset=db_charset)
+        connect = mysql.connector.connect(
+                user=conf.db_user, password=conf.db_pass,
+                host=conf.db_host, database=conf.db_name,
+                charset=conf.db_charset)
         sql_cursor = connect.cursor()
         sql_query = "select SignalData from DeviceOperation " + \
                     "where DeviceClassID=%s " + \
@@ -95,12 +88,12 @@ class IRProxy(object):
                     "and Protocol='IR'"
         sql_cursor.execute(sql_query, (device, operation))
         signal = sql_cursor.fetchone()
-        if signal == None:
+        if signal is None:
             return io.StringIO('error: signal not found on DB')
         signal = signal[0]
 
         # send signal to jRemocon
-        request_url = jRemocon_uri.format(signal)
+        request_url = conf.jRemocon_uri + signal
         result = urlopen(request_url).read().decode('utf-8')
         return io.StringIO("sent signal to jRemocon.")
 
@@ -118,12 +111,12 @@ class IRProxy(object):
         """
         result = io.StringIO()
 #TODO: error handling
-        connect = mysql.connector.connect(user=db_user, password=db_pass,
-                host=db_host, database=db_name, charset=db_charset)
+        connect = mysql.connector.connect(
+                user=conf.db_user, password=conf.db_pass,
+                host=conf.db_host, database=conf.db_name,
+                charset=conf.db_charset)
         sql_cursor = connect.cursor()
-        # sql_query= "select DeviceClassID,Operation,Description " + \
-        sql_query= "select * " + \
-                   "from DeviceOperation"
+        sql_query= "select * from DeviceOperation"
         sql_cursor.execute(sql_query)
         signals = sql_cursor.fetchall()
 
@@ -137,10 +130,40 @@ class IRProxy(object):
 def printLog(message):
     if isLog: print("log: " + message)
 
+class Config(object):
+    def loadparam(self, conf_dict, param_name):
+        if param_name in conf_dict:
+            self.__dict__[param_name] = conf_dict[param_name]
+            return True
+        else:
+            return False
+
+script_path = os.path.abspath(os.path.dirname(__file__))
+conf_name = script_path + '/conf/IRProxy.conf'
+conf = Config()
 
 if __name__ == '__main__':
+    # load and check config
+    if len(sys.argv) == 2:
+        conf_name = sys.argv[1]
+    with open(conf_name, 'r') as conf_file:
+        conf_dict = json.loads(conf_file.read())
+        if conf.loadparam(conf_dict, 'isLog') and \
+           conf.loadparam(conf_dict, 'url_prefix') and \
+           conf.loadparam(conf_dict, 'port_num') and \
+           conf.loadparam(conf_dict, 'db_host') and \
+           conf.loadparam(conf_dict, 'db_user') and \
+           conf.loadparam(conf_dict, 'db_pass') and \
+           conf.loadparam(conf_dict, 'db_name') and \
+           conf.loadparam(conf_dict, 'db_charset') and \
+           conf.loadparam(conf_dict, 'jRemocon_uri'): pass
+        else:
+            print("error: load config file failed; lack of parameter.")
+            quit(1)
+
+    # start server
     application = IRProxy()
-    server = make_server('', port_num, application)
+    server = make_server('', conf.port_num, application)
     signal.signal(signal.SIGINT, lambda n,f : server.shutdown())
     t = threading.Thread(target=server.serve_forever)
     t.start()
