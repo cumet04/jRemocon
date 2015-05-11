@@ -4,39 +4,30 @@
 from wsgiref.simple_server import make_server
 import subprocess
 import hashlib
+import json
 import signal
+import os
+import sys
 import threading
 import io
 
-isLog = True
-url_prefix = 'jRemocon'
-port_num = 8080
-lircd_conf = '/etc/lirc/lircd.conf'
-lircd_conf_skel = '/etc/lirc/lircd.conf.skel'
 
 class jRemocon(object):
     
     def __init__(self):
 #TODO: use alternative instead of dict
         self.path_functions = {
-            '' : (self.showHelp,
-                ('show this page.',)),
-            '/' : (self.showHelp,
-                ('show this page.',)),
-            '/help' : (self.showHelp,
-                ('show this page.',)),
-            '/send' : (self.sendSignal,
-                ('emit specified signal as infrared signal.',
-                'usage : /send?pulse={pulsewidth}&signal={signalstring}')),
-            '/lirc/clear' : (self.clearCache,
-                ("clear lirc's cache DB (/etc/lirc/lircd.conf) and restart lirc daemon.",)),
-            '/lirc/restart' : (self.restartLirc,
-                ('restart lirc daemon.',)),
+            '' : self.showHelp,
+            '/' : self.showHelp,
+            '/help' : self.showHelp,
+            '/send' : self.sendSignal,
+            '/lirc/clear' : self.clearCache,
+            '/lirc/restart' : self.restartLirc
             }
 
     def __call__(self, environ, start_response):
         path = environ['PATH_INFO']
-        query = environ['QUERY_STRING']
+        query = parse_qs(environ['QUERY_STRING'])
         headers = [('Content-type', 'text/plain; charset=utf-8')]
 
         method = None
@@ -53,11 +44,17 @@ class jRemocon(object):
 
 
 # API functions
-    def sendSignal(self, query_str):
+    def sendSignal(self, query_param):
+        """
+        emit specified signal as infrared signal.
+        usage : /send?pulse={pulsewidth}&signal={signalstring}
+        """
         printLog("sendSignal")
 
-        if query_str == None:
+        if query_str is None:
             return io.StringIO("error: target signal is not specified.")
+        query_str = "pulse=%d&signal=%s".format(
+                        query_param['pulse'], query['signal'])
         signal_hash = hashlib.sha512(query_str.encode('utf-8')).hexdigest()
         printLog("generate hash : " + signal_hash)
 
@@ -116,7 +113,10 @@ class jRemocon(object):
         return io.StringIO('execute irsend')
 
 
-    def clearCache(self, query_str):
+    def clearCache(self, query_param):
+        """
+        clear lirc's cache DB (/etc/lirc/lircd.conf) and restart lirc daemon.
+        """
         result = io.StringIO()
         printLog("clearCache")
 
@@ -137,7 +137,10 @@ class jRemocon(object):
         return result
 
 
-    def restartLirc(self, query_str):
+    def restartLirc(self, query_param):
+        """
+        restart lirc daemon.
+        """
         result = io.StringIO()
         printLog("restartLirc")
 
@@ -151,14 +154,15 @@ class jRemocon(object):
         return result
 
 
-    def showHelp(self, query_str):
+    def showHelp(self, query_param):
+        """
+        show this help message.
+        """
         printLog("showHelp")
         result = io.StringIO()
         for api in self.path_functions:
-            print('- ' + api, file=result)
-            for line in self.path_functions[api][1]:
-                print('  ' + line, file=result)
-            print('', file=result)
+            print('- ' + api, file=result, end="")
+            print(textwrap.dedent(self.path_functions[api].__doc__), file=result)
         return result
 
 
@@ -167,9 +171,35 @@ class jRemocon(object):
 def printLog(message):
     if isLog: print("log: " + message)
 
-application = jRemocon()
+
+class Config(object):
+    def loadparam(self, conf_dict, param_name):
+        if param_name in conf_dict:
+            self.__dict__[param_name] = conf_dict[param_name]
+            return True
+        else:
+            return False
+
+script_path = os.path.abspath(os.path.dirname(__file__))
+conf_name = script_path + '/conf/jRemocon.conf'
+conf = Config()
 
 if __name__ == '__main__':
+    # load and check config
+    if len(sys.argv) == 2:
+        conf_name = sys.argv[1]
+    with open(conf_name, 'r') as conf_file:
+        conf_dict = json.loads(conf_file.read())
+        if conf.loadparam(conf_dict, 'isLog') and \
+           conf.loadparam(conf_dict, 'url_prefix') and \
+           conf.loadparam(conf_dict, 'port_num') and \
+           conf.loadparam(conf_dict, 'lircd_conf'): pass
+        else:
+            print("error: load config file failed; lack of parameter.")
+            quit(1)
+
+    # start server
+    application = jRemocon()
     server = make_server('', port_num, application)
     signal.signal(signal.SIGINT, lambda n,f : server.shutdown())
     t = threading.Thread(target=server.serve_forever)
