@@ -34,8 +34,8 @@ class IRProxy(object):
 
         method = None
         # eliminate path prefix from PATH_INFO.
-        if path.startswith('/' + url_prefix):
-            method = path.partition(url_prefix)[2]
+        if path.startswith('/' + conf.url_prefix):
+            method = path.partition(conf.url_prefix)[2]
 
         # execute API function if the requested API exists.
         if method in self.path_functions:
