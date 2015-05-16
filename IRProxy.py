@@ -94,6 +94,7 @@ class IRProxy(object):
 
         # send signal to jRemocon
         request_url = conf.jRemocon_uri + signal
+#TODO: error handling
         result = urlopen(request_url).read().decode('utf-8')
         return io.StringIO("sent signal to jRemocon.")
 
@@ -128,7 +129,7 @@ class IRProxy(object):
 # entry point ------------------------------------------------------------------
 
 def printLog(message):
-    if isLog: print("log: " + message)
+    if conf.isLog: print("log: " + message)
 
 class Config(object):
     def loadparam(self, conf_dict, param_name):
