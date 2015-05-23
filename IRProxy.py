@@ -93,7 +93,7 @@ class IRProxy(object):
         signal = signal[0]
 
         # send signal to jRemocon
-        request_url = conf.jRemocon_uri + signal
+        request_url = conf.jRemocon_uri.format(ip, signal)
 #TODO: error handling
         result = urlopen(request_url).read().decode('utf-8')
         return io.StringIO("sent signal to jRemocon.")
