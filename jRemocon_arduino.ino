@@ -3,18 +3,26 @@
 
 #define LED_PIN 13
 #define CARRIER_PIN 9
+#define ESP_RX_PIN 11
+#define ESP_TX_PIN 10
 
 #define SSID "AirPort07934"
 #define PASSWORD "3101035127901"
-#define HOST_NAME "192.168.104.31"
-#define HOST_PORT (9091)
 
-SoftwareSerial mySerial(11, 10); /* RX:D3, TX:D2 */
+
+SoftwareSerial mySerial(ESP_RX_PIN, ESP_TX_PIN);
 ESP8266 wifi(mySerial);
 
 void setup(void)
 {
     Serial.begin(9600);
+    IRTransmitter_setup();
+    // this port is ignored. it needs search embedded code.
+    Server_setup(8090);
+}
+
+void Server_setup(uint32_t port)
+{
     Serial.print("setup begin\r\n");
 
     Serial.print("FW Version:");
@@ -40,7 +48,7 @@ void setup(void)
         Serial.print("multiple err\r\n");
     }
 
-    if (wifi.startTCPServer(8090)) {
+    if (wifi.startTCPServer(port)) {
         Serial.print("start tcp server ok\r\n");
     } else {
         Serial.print("start tcp server err\r\n");
@@ -55,44 +63,67 @@ void setup(void)
     Serial.print("setup end\r\n");
 }
 
+void processLine(uint8_t *line, uint8_t len)
+{
+    char buf[0xFF];
+
+    int res = sscanf((char*)line, "GET /jRemocon/send\?%s HTTP/1.1", buf);
+    if( res != 1 ) return;
+
+    Serial.print("send: ");
+    Serial.println(buf);
+    transmitSignalData(buf);
+}
+
+// TODO: check mux_id
 void loop(void)
 {
-    uint8_t buffer[128] = {0};
+    uint8_t buffer[0xFF] = {0};
     uint8_t mux_id;
-    uint32_t len = wifi.recv(&mux_id, buffer, sizeof(buffer), 100);
-    if (len > 0) {
-        Serial.print("Status:[");
-        Serial.print(wifi.getIPStatus().c_str());
-        Serial.println("]");
+    uint32_t len = wifi.recv(&mux_id, buffer, sizeof(buffer)-1, 100);
+    if( len <= 0 ) return;
 
-        Serial.print("Received from :");
+    Serial.print("Status:[");
+    Serial.print(wifi.getIPStatus().c_str());
+    Serial.println("]");
+
+    Serial.print("Received from :");
+    Serial.println(mux_id);
+
+    Serial.print("Received length :");
+    Serial.println(len);
+    Serial.println("");
+
+    do
+    {
+        uint8_t *p = buffer;
+        for( ; (p - buffer) < len; p++)
+        {
+            if( *p == '\r' && *(p+1) == '\n' )
+            {
+                processLine(buffer, p - buffer);
+                len -= p+2 - buffer;
+                if( len > 0 ) memmove(buffer, p+2, len);
+                break;
+            }
+        }
+    }while( len > 0 );
+
+    Serial.println("");
+
+    if (wifi.releaseTCP(mux_id)) {
+        Serial.print("release tcp ");
         Serial.print(mux_id);
-        Serial.print("[");
-        for(uint32_t i = 0; i < len; i++) {
-            Serial.print((char)buffer[i]);
-        }
-        Serial.print("]\r\n");
-
-        if(wifi.send(mux_id, buffer, len)) {
-            Serial.print("send back ok\r\n");
-        } else {
-            Serial.print("send back err\r\n");
-        }
-
-        if (wifi.releaseTCP(mux_id)) {
-            Serial.print("release tcp ");
-            Serial.print(mux_id);
-            Serial.println(" ok");
-        } else {
-            Serial.print("release tcp");
-            Serial.print(mux_id);
-            Serial.println(" err");
-        }
-
-        Serial.print("Status:[");
-        Serial.print(wifi.getIPStatus().c_str());
-        Serial.println("]");
+        Serial.println(" ok");
+    } else {
+        Serial.print("release tcp");
+        Serial.print(mux_id);
+        Serial.println(" err");
     }
+
+    Serial.print("Status:[");
+    Serial.print(wifi.getIPStatus().c_str());
+    Serial.println("]");
 }
 
 
@@ -125,10 +156,8 @@ void IRTransmitter_setup() {
     OCR1A = 207;                // コンペア値
 }
 
-void IRTransmitter_test() {
-
-    char input[] = "pulse=562&signal=ffff00a2aa88a2288a88888a22aa8a";// TEST: light off
-
+void transmitSignalData(char input[])
+{
     unsigned int pulse_width;
     byte signal_bytes[0xFF];
     int count;
@@ -142,7 +171,6 @@ void IRTransmitter_test() {
     {
         emitSignal(pulse_width, signal_bytes, count);
     }
-    delay(1000);
 }
 
 // return code: 0 = ok
