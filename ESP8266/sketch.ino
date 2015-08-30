@@ -1,10 +1,9 @@
 #include <ESP8266WiFi.h>
 
-// #define DO_TEST
 
 const int LED_PIN = 0;
 
-const char* Wifi_SSID = "AirPort07935";
+const char* Wifi_SSID = "AirPort07934";
 const char* Wifi_PASS = "3101035127901";
 const int Server_Portnum = 8080;
 
@@ -18,24 +17,18 @@ WiFiServer server(Server_Portnum);
 void setup() {
     Serial.begin(115200);
     delay(10);
-#ifdef DO_TEST
-    runTest();
-    return;
-#endif
+
 
     if (connectWifi(Wifi_SSID, Wifi_PASS) != WL_CONNECTED) {
         return;
     }
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
+
+    server.begin();
 }
 
 void loop() {
-#ifdef DO_TEST
-    return;
-#endif
-    // Serial.println("test");
-    return;
 
     WiFiClient client = server.available();
     if (!client) return;
@@ -73,7 +66,7 @@ int readRequest(WiFiClient client, String &method, String &param) {
 
 void processRequest_help(String &status, String &response) {
     status = HTTP_OK;
-    response = "";
+    response = "to be implemented; help message";
     return;
 }
 
@@ -105,8 +98,17 @@ void processRequest_send(String &status, String &response, String param) {
 
 void respondString(WiFiClient client, String status, String response) {
     // return header
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: text/plain");
+    client.println("Connection: close");
+    client.println();
+
     // return response string
-    // put end char
+    client.println(response);
+        
+    // connection stop
+    client.stop();
+    
     return;
 }
 
@@ -118,12 +120,13 @@ int connectWifi(const char* ssid, const char* pass) {
 
     // wait
     Serial.print("connecting");
-    while (WiFi.status() == WL_IDLE_STATUS) {
+    while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
     }
     Serial.println("");
 // output result
+// TODO: WiFi.beigin DON'T return WL_NO_SSID_AVAIL, WL_CONNECT_FAILED
     switch (WiFi.status()) {
         case WL_CONNECTED:
             Serial.println("connected.");
@@ -165,3 +168,4 @@ void runTest() {
 
     Serial.println("All tests are passed.");
 }
+
