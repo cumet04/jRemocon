@@ -18,7 +18,6 @@ void setup() {
     Serial.begin(115200);
     delay(10);
 
-
     if (connectWifi(Wifi_SSID, Wifi_PASS) != WL_CONNECTED) {
         return;
     }
@@ -61,7 +60,35 @@ void loop() {
 int readRequest(WiFiClient client, String &method, String &param) {
     method = "";
     param = "";
+    boolean line_break = false;
+    while (true) {
+        String line = readWord(client);
+        if (line == "\r") {
+            Serial.println("readRequest failed");
+            break;
+        }
+        if (line == "") break;
+        Serial.println(line.c_str());
+    }
     return 0;
+}
+
+String readWord(WiFiClient client) {
+    char buf[0xFFF];
+    int pos = 0;
+    while (client.connected() && pos < sizeof(buf)-1) {
+        if (!client.available()) continue;
+        char c = client.read();
+
+        if (c == '\r') continue;
+        if (c == ' ' || c == '\n') {
+            buf[pos] = '\0';
+            return String(buf);
+        }
+        buf[pos] = c;
+        pos++;
+    }
+    return String('\r'); // connection is lost, or buffer over flow
 }
 
 void processRequest_help(String &status, String &response) {
