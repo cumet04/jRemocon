@@ -8,6 +8,7 @@ const char* Wifi_PASS = "3101035127901";
 const int Server_Portnum = 8080;
 
 const String HTTP_OK = "200 OK";
+const String HTTP_NOTALLOWED = "405 Method Not Allowed";
 const String HTTP_NOTFOUND = "404 Not Found";
 const String HTTP_ERROR = "500 Internal Server Error";
 const String HTTP_BADREQUEST = "400 Bad Request";
@@ -21,10 +22,10 @@ void setup() {
     if (connectWifi(Wifi_SSID, Wifi_PASS) != WL_CONNECTED) {
         return;
     }
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
 
     server.begin();
+    Serial.print("wait for request: ");
+    Serial.println(WiFi.localIP());
 }
 
 void loop() {
@@ -35,41 +36,72 @@ void loop() {
 
     String method, param;
     int result = readRequest(client, method, param);
-    if (result != 0) {
+    if (result == -1) {
         Serial.println("readRequest failed.");
-        return;
+    } else if (result == -2) {
+        respondString(client, HTTP_NOTALLOWED, "HTTP method not allowed");
+        Serial.println("readRequest failed: unexpected HTTP method.");
+    } else if (result == 0) {
+        String status = "";
+        String response = "";
+        if (method == "/" || method == "/help") {
+            processRequest_help(status, response);
+        } else if (method == "/send") {
+            processRequest_send(status, response, param);
+        } else {
+            status = HTTP_NOTFOUND;
+            response = "method not found";
+        }
+        respondString(client, status, response);
     }
-
-    String status = "";
-    String response = "";
-    if (method == "/" || method == "/help") {
-        processRequest_help(status, response);
-    } else if (method == "/send") {
-        processRequest_send(status, response, param);
-    } else {
-        status = HTTP_NOTFOUND;
-        response = "method not found";
-    }
-    respondString(client, status, response);
 
     Serial.print("wait for request: ");
     Serial.println(WiFi.localIP());
 }
 
 
-int readRequest(WiFiClient client, String &method, String &param) {
-    method = "";
+int readRequest(WiFiClient client, String &path, String &param) {
+    Serial.println("readRequest");
+    path = "";
     param = "";
-    boolean line_break = false;
+
+    // read request
+    String method = readWord(client);
+    if (method == "\r") return -1;
+    if (method != "GET" && method != "POST") return -2;
+    path = readWord(client);
+    if (path == "\r") return -1;
+    Serial.print("HTTP method: "); Serial.println(method);
+    Serial.print("path: "); Serial.println(path);
+
+    // read headers
+    Serial.println("other headers:");
     while (true) {
-        String line = readWord(client);
-        if (line == "\r") {
-            Serial.println("readRequest failed");
-            break;
-        }
+        String line = readWord(client); // other headers are ignored
+        if (line == "\r") return -1;
         if (line == "") break;
-        Serial.println(line.c_str());
+        Serial.println(line);
     }
+
+    // put param from path, if method is GET
+    if (method == "GET") {
+        int pos = path.indexOf("?");
+        if (pos == -1) param = "";
+        else {
+            param = path.substring(pos+1);
+            path = path.substring(0, pos);
+        }
+    }
+
+    // read body, if method is POST
+    if (method == "POST") {
+        param = readWord(client);
+        if (param == "\r") return -1;
+    }
+
+    Serial.print("path: "); Serial.println(path);
+    Serial.print("param: "); Serial.println(param);
+
     return 0;
 }
 
@@ -102,6 +134,8 @@ void processRequest_send(String &status, String &response, String param) {
     byte signal[0xFF];
     switch (decodeSignalData(param.c_str(), width, signal)) {
         case 0:
+            status = HTTP_OK;
+            response = "send accepted: " + param;
             break;
         case -1:
             status = HTTP_BADREQUEST;
@@ -125,8 +159,10 @@ void processRequest_send(String &status, String &response, String param) {
 
 void respondString(WiFiClient client, String status, String response) {
     // return header
-    client.println("HTTP/1.1 200 OK");
+    client.print("HTTP/1.1 ");
+    client.println(status);
     client.println("Content-Type: text/plain");
+    if (status == HTTP_NOTALLOWED) client.println("Allow: GET, POST");
     client.println("Connection: close");
     client.println();
 
