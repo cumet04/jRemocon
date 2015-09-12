@@ -4,6 +4,9 @@
 
 const int LED_PIN = 2;
 
+IPAddress ip(192, 168, 104, 34); 
+IPAddress subnet(192, 168, 104, 0); 
+IPAddress gateway(192, 168, 104, 1); 
 const char* Wifi_SSID = "AirPort07934";
 const char* Wifi_PASS = "3101035127901";
 const char* API_PREFIX = "/jRemocon";
@@ -44,7 +47,6 @@ void loop() {
     Serial.print("res: request = "); Serial.println(request);
 
     Serial.println("log: extractMethod");
-    // char method[0x10], param_str[0x1000];
     char method[0x10], param_str[0x200];
     int result = extractMethod(request, API_PREFIX, method, param_str, \
             sizeof(method), sizeof(param_str));
@@ -65,8 +67,8 @@ void loop() {
     Serial.print("res: param_str = "); Serial.println(param_str);
 
     Serial.println("log: processRequest");
-    char res_status[0x100], res_message[0x100];
-    if (equal(method, "") || equal(method, "/") || equal(method, "/help")) {
+    char res_status[0x50], res_message[0x200];
+    if (strlen(method) == 0 || equal(method, "/") || equal(method, "/help")) {
         Serial.println("log: processRequest_help");
         processRequest_help(res_status, res_message);
     }
@@ -102,7 +104,7 @@ int extractMethod(char request[], const char* prefix, char method[], char param[
     } else {
         char *mp = strtok(p, "?");
         if (strlen(mp + strlen(prefix)) > size_m -1) return -3;
-        strcpy(method, mp);
+        strcpy(method, mp + strlen(prefix));
 
         char *pp = strtok(NULL, "");
         if (strlen(pp) > size_p-1) return -3;
@@ -140,42 +142,68 @@ void processRequest_help(char status[], char response[]) {
 }
 
 void processRequest_send(char input[], char status[], char response[]) {
-    // String pulse_raw = extractValue(input, "pulse");
-    // if (pulse_raw == "") {
-    //     status = HTTP_BADREQUEST;
-    //     response = "parse pulse failed";
-    //     return;
-    // }
-    // unsigned int pulse = pulse_raw.toInt();
+    // parse params
+    char pulse_raw[0xF] = {};
+    char signal_raw[0x200] = {};
+    if (parseParams(input, pulse_raw, signal_raw, 
+            sizeof(pulse_raw), sizeof(signal_raw)) != 0) {
+        strcpy(status, HTTP_BADREQUEST);
+        strcpy(response, "parse parameters failed (1)");
+        return;
+    }
 
-    // String signal_str = extractValue(input, "signal");
-    // if (signal_str == "") {
-    //     status = HTTP_BADREQUEST;
-    //     response = "parse pulse failed";
-    //     return;
-    // }
+    // check params
+    if (pulse_raw[0] == '\0' || signal_raw[0] == '\0') {
+        strcpy(status, HTTP_BADREQUEST);
+        strcpy(response, "parse parameters failed (2)");
+        return;
+    }
+    int pulse = atoi(pulse_raw);
+    if (pulse <= 0) {
+        strcpy(status, HTTP_BADREQUEST);
+        strcpy(response, "parse parameters failed (3)");
+        return;
+    }
+    byte signal_bytes[0x100];
+    int size = sizeof(signal_bytes);
+    if (decodeSignalData(signal_raw, signal_bytes, size) != 0) {
+        strcpy(status, HTTP_BADREQUEST);
+        strcpy(response, "parse parameters failed (4)");
+        return;
+    }
 
-    // byte signal[0xFF] = {};
-    // int size = sizeof(signal);
-    // // switch (decodeSignalData(signal_str, signal_bytes, size)) {
-    // //     case -1:
-    // //         status = HTTP_BADREQUEST;
-    // //         response = "signal has nox-hex char";
-    // //         return;
-    // //     case -1:
-    // //         status = HTTP_ERROR;
-    // //         response = "decodeSignalData is falied";
-    // //         return;
-    // // }
-    // status = HTTP_OK;
-    // response = "send accepted: " + input;
+    strcpy(status, HTTP_OK);
+    strcpy(response, "send accepted");
 
-    // unsigned int time0 = micros();
-    // emitSignal(pulse, signal, size, LED_PIN);
-    // unsigned int time1 = micros();
-    // Serial.println(time1-time0);
+    Serial.println("");
+
+    emitSignal(pulse, signal_bytes, size, LED_PIN);
 
     return;
+}
+
+int parseParams(char input[], char pulse[], char signal[], int size_p, int size_s) {
+    char *p = strtok(input, "&");
+    if (p == NULL) return -1;
+
+    for (int i=0; i<2; i++) {
+        if (strncmp(p, "pulse=", strlen("pulse=")) == 0) {
+            if (size_p <= strlen(p+6)) {
+                Serial.println("buffer over flow: pulse");
+                return -2;
+            }
+            strcpy(pulse, p+6);
+        }
+        else if (strncmp(p, "signal=", strlen("signal=")) == 0) {
+            if (size_s <= strlen(p+7)) {
+                Serial.println("buffer over flow: pulse");
+                return -3;
+            }
+            strcpy(signal, p+7);
+        }
+        p = strtok(NULL, "");
+    }
+    return 0;
 }
 
 
@@ -198,6 +226,7 @@ void respondString(WiFiClient client, const char *status, const char *response) 
 }
 
 int connectWifi(const char* ssid, const char* pass) {
+    WiFi.config(ip, gateway, subnet);
     // try to connect
     Serial.print("connectWifi: SSID = ");
     Serial.println(ssid);
@@ -228,28 +257,4 @@ int connectWifi(const char* ssid, const char* pass) {
     }
     Serial.println("unexpected error.");
     return WiFi.status();
-}
-
-void runTest() {
-    int result;
-
-    Serial.print("TEST_convertHexcharToByte...");
-    result = TEST_convertHexcharToByte();
-    if (result != 0) {
-        Serial.print("failed: ");
-        Serial.println(result);
-        return;
-    }
-    Serial.println("passed.");
-
-    Serial.print("TEST_extractValue...");
-    result = TEST_extractValue();
-    if (result != 0) {
-        Serial.print("failed: ");
-        Serial.println(result);
-        return;
-    }
-    Serial.println("passed.");
-
-    Serial.println("All tests are passed.");
 }
