@@ -35,11 +35,11 @@ void emitSignal(unsigned int width, byte signal[], int size, int pin) {
     for (int n = 0; n < size; n++) {
         byte single_byte = signal[n];
         for(int i = 7; i >= 0; i--) {
-            int value = (single_byte & (1 << i)) ? PWMRANGE/3 : LOW;
-            analogWrite(pin, value);
+            int value = (single_byte & (1 << i)) ? PWMRANGE/3 : 0;
+            analogWrite(pin, PWMRANGE - value);
             delayMicroseconds(width);
         }
     }
-    digitalWrite(pin, LOW);
+    digitalWrite(pin, HIGH);
 }
 
