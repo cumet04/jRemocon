@@ -175,8 +175,6 @@ void processRequest_send(char input[], char status[], char response[]) {
     strcpy(status, HTTP_OK);
     strcpy(response, "send accepted");
 
-    Serial.println("");
-
     emitSignal(pulse, signal_bytes, size, LED_PIN);
 
     return;
@@ -210,16 +208,9 @@ int parseParams(char input[], char pulse[], char signal[], int size_p, int size_
 void respondString(WiFiClient client, const char *status, const char *response) {
     Serial.println(response);
 
-    // return header
-    client.print(F("HTTP/1.1 "));
-    client.println(status);
-    client.println(F("Content-Type: text/plain"));
-    if (status == HTTP_NOTALLOWED) client.println(F("Allow: GET"));
-    client.println(F("Connection: close"));
-    client.println();
-
-    // return response string
-    client.println(response);
+    char buf[0x200];
+    sprintf(buf, "HTTP/1.1 %s\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n%s", status, response);
+    client.println(buf);
     client.flush();
 
     return;
