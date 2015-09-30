@@ -1,4 +1,5 @@
 #include <ESP8266WiFi.h>
+#include "conn.h"
 
 #define equal(a,b) (strcmp(a,b) == 0)
 
@@ -7,8 +8,6 @@ const int LED_PIN = 2;
 IPAddress ip(192, 168, 104, 34); 
 IPAddress subnet(192, 168, 104, 0); 
 IPAddress gateway(192, 168, 104, 1); 
-const char* Wifi_SSID = "AirPort07934";
-const char* Wifi_PASS = "3101035127901";
 const char* API_PREFIX = "/jRemocon";
 const int Server_Portnum = 8080;
 
