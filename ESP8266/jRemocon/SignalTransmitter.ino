@@ -27,8 +27,8 @@ int emitSignal(int width, String signal, int pin) {
 }
 
 void IR_ON(int pin) {
-    // analogWrite(pin, 2 * PWMRANGE / 3);
+    analogWrite(pin, 2 * PWMRANGE / 3);
 }
 void IR_OFF(int pin) {
-    // analogWrite(pin, PWMRANGE);
+    analogWrite(pin, PWMRANGE);
 }
