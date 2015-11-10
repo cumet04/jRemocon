@@ -66,8 +66,8 @@ void handleSend() {
     }
     String signal = server->arg("signal");
 
-    // send signal
-    int code = emitSignal(pulse, signal, LED_PIN);
+    // check signal
+    int code = checkSignal(pulse, signal);
     if (code == -1) {
         server->send(400, "text/plain", "signal has non-hex char.");
         return;
@@ -77,9 +77,16 @@ void handleSend() {
     String result;
     result += "accepted data: {pulse=" + String(pulse) + \
                 ", signal=" + signal + "}\r\n";
-    result += "signal sent.";
-
+    result += "the signal is to send.";
     server->send(200, "text/plain", result);
+
+    delay(100); // wait for stable of power
+
+    // send signal
+    int code = emitSignal(pulse, signal, LED_PIN);
+    if (code == -1) {
+        // error
+    }
 }
 
 void handleHelp() {

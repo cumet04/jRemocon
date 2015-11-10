@@ -26,6 +26,16 @@ int emitSignal(int width, String signal, int pin) {
     return 0;
 }
 
+// return code:  0 = ok
+//              -1 = non-hex char is found
+int checkSignal(int width, String signal) {
+    for (int n = 0; n < signal.length(); n++) {
+        byte word = toWord(signal[n]);
+        if (word == -1) return -1;
+    }
+    return 0;
+}
+
 void IR_ON(int pin) {
     analogWrite(pin, 2 * PWMRANGE / 3);
 }
