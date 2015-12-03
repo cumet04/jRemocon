@@ -27,7 +27,7 @@ class jRemocon(object):
 
     def __call__(self, environ, start_response):
         path = environ['PATH_INFO']
-        query = parse_qs(environ['QUERY_STRING'])
+        query = environ['QUERY_STRING']
         headers = [('Content-type', 'application/xml; charset=UTF-8')]
 
         method = None
@@ -37,22 +37,21 @@ class jRemocon(object):
         result = None
         if method in self.path_functions:
             start_response('200 OK', headers)
-            result = self.path_functions[method][0](query)
-            result = result.getvalue().encode('utf-8')
+            result = self.path_functions[method](query).getvalue()
         else:
             start_response('404 Not found', headers)
-            result = '404 Not found'.encode("utf-8")
+            result = '404 Not found'
 
         # generate response
         # ACD周りのサービスがxmlでのレスポンスを要求するため強引に対応
         xml_head = '<ns:jRemoconResponse xmlns:ns="http://jRemocon"><ns:return>'
         xml_tail = '</ns:return></ns:jRemoconResponse>'
         response = xml_head + result + xml_tail
-        return [response]
+        return [response.encode("utf-8")]
 
 
 # API functions
-    def sendSignal(self, query_param):
+    def sendSignal(self, query_str):
         """
         emit specified signal as infrared signal.
         usage : /send?pulse={pulsewidth}&signal={signalstring}
@@ -61,8 +60,8 @@ class jRemocon(object):
 
         if query_str is None:
             return io.StringIO("error: target signal is not specified.")
-        query_str = "pulse=%d&signal=%s".format(
-                        query_param['pulse'], query['signal'])
+        # query_str = "pulse=%d&signal=%s".format(
+        #                query_param['pulse'], query['signal'])
         signal_hash = hashlib.sha512(query_str.encode('utf-8')).hexdigest()
         printLog("generate hash : " + signal_hash)
 
@@ -211,4 +210,5 @@ if __name__ == '__main__':
     server = make_server('', conf.port_num, application)
     signal.signal(signal.SIGINT, lambda n,f : server.shutdown())
     t = threading.Thread(target=server.serve_forever)
+    printLog("jRemocon start.")
     t.start()
