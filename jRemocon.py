@@ -31,8 +31,8 @@ class jRemocon(object):
         headers = [('Content-type', 'application/xml; charset=UTF-8')]
 
         method = None
-        if path.startswith('/' + url_prefix):
-            method = path.partition(url_prefix)[2]
+        if path.startswith('/' + conf.url_prefix):
+            method = path.partition(conf.url_prefix)[2]
 
         result = None
         if method in self.path_functions:
@@ -103,7 +103,7 @@ class jRemocon(object):
             raw_code = stdout.decode('utf-8')
 
             # append the code to lircd.conf
-            conf_file = open(lircd_conf, 'r+')
+            conf_file = open(conf.lircd_conf, 'r+')
             new_conf = io.StringIO()
             for line in conf_file:
                 new_conf.write(line)
@@ -129,13 +129,13 @@ class jRemocon(object):
         printLog("clearCache")
 
         new_conf = io.StringIO()
-        with open(lircd_conf, 'r') as conf_file:
+        with open(conf.lircd_conf, 'r') as conf_file:
             isSignal = False
             for line in conf_file:
                 if 'end raw_codes' in line: isSignal = False
                 if isSignal == False: new_conf.write(line)
                 if 'begin raw_codes' in line: isSignal = True
-        with open(lircd_conf, 'w') as conf_file:
+        with open(conf.lircd_conf, 'w') as conf_file:
             # write clean conf
             conf_file.seek(0)
             conf_file.write(new_conf.getvalue())
@@ -177,7 +177,7 @@ class jRemocon(object):
 # entry point ------------------------------------------------------------------
 
 def printLog(message):
-    if isLog: print("log: " + message)
+    if conf.isLog: print("log: " + message)
 
 
 class Config(object):
@@ -208,7 +208,7 @@ if __name__ == '__main__':
 
     # start server
     application = jRemocon()
-    server = make_server('', port_num, application)
+    server = make_server('', conf.port_num, application)
     signal.signal(signal.SIGINT, lambda n,f : server.shutdown())
     t = threading.Thread(target=server.serve_forever)
     t.start()
