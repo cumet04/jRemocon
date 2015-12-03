@@ -28,19 +28,27 @@ class jRemocon(object):
     def __call__(self, environ, start_response):
         path = environ['PATH_INFO']
         query = parse_qs(environ['QUERY_STRING'])
-        headers = [('Content-type', 'text/plain; charset=utf-8')]
+        headers = [('Content-type', 'application/xml; charset=UTF-8')]
 
         method = None
         if path.startswith('/' + url_prefix):
             method = path.partition(url_prefix)[2]
 
+        result = None
         if method in self.path_functions:
             start_response('200 OK', headers)
             result = self.path_functions[method][0](query)
-            return [result.getvalue().encode('utf-8')]
+            result = result.getvalue().encode('utf-8')
         else:
             start_response('404 Not found', headers)
-            return ['404 Not found'.encode("utf-8")]
+            result = '404 Not found'.encode("utf-8")
+
+        # generate response
+        # ACD周りのサービスがxmlでのレスポンスを要求するため強引に対応
+        xml_head = '<ns:jRemoconResponse xmlns:ns="http://jRemocon"><ns:return>'
+        xml_tail = '</ns:return></ns:jRemoconResponse>'
+        response = xml_head + result + xml_tail
+        return [response]
 
 
 # API functions
@@ -110,7 +118,7 @@ class jRemocon(object):
 
         # send signal with irsend
         subprocess.Popen(['irsend', 'SEND_ONCE', 'jremocon', signal_hash])
-        return io.StringIO('execute irsend')
+        return io.StringIO('is;ok')
 
 
     def clearCache(self, query_param):
