@@ -1,214 +1,148 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
-from wsgiref.simple_server import make_server
-import subprocess
-import hashlib
 import json
-import signal
 import os
 import sys
 import threading
-import io
+import time
+import subprocess
+import hashlib
+from flask import Flask, jsonify, request, url_for, abort, Response
+
+from logging import getLogger,StreamHandler,DEBUG
 
 
 class jRemocon(object):
-    
     def __init__(self):
-#TODO: use alternative instead of dict
-        self.path_functions = {
-            '' : self.showHelp,
-            '/' : self.showHelp,
-            '/help' : self.showHelp,
-            '/send' : self.sendSignal,
-            '/lirc/clear' : self.clearCache,
-            '/lirc/restart' : self.restartLirc
-            }
-
-    def __call__(self, environ, start_response):
-        path = environ['PATH_INFO']
-        query = environ['QUERY_STRING']
-        headers = [('Content-type', 'application/xml; charset=UTF-8')]
-
-        method = None
-        if path.startswith('/' + conf.url_prefix):
-            method = path.partition(conf.url_prefix)[2]
-
-        result = None
-        if method in self.path_functions:
-            start_response('200 OK', headers)
-            result = self.path_functions[method](query).getvalue()
-        else:
-            start_response('404 Not found', headers)
-            result = '404 Not found'
-
-        # generate response
-        # ACD周りのサービスがxmlでのレスポンスを要求するため強引に対応
-        xml_head = '<ns:jRemoconResponse xmlns:ns="http://jRemocon"><ns:return>'
-        xml_tail = '</ns:return></ns:jRemoconResponse>'
-        response = xml_head + result + xml_tail
-        return [response.encode("utf-8")]
+        pass
 
 
-# API functions
-    def sendSignal(self, query_str):
-        """
-        emit specified signal as infrared signal.
-        usage : /send?pulse={pulsewidth}&signal={signalstring}
-        """
-        printLog("sendSignal")
+    def show_help(self):
+        logger.info('run show_help')
+        return jsonify(res='help')
 
-        if query_str is None:
-            return io.StringIO("error: target signal is not specified.")
-        # query_str = "pulse=%d&signal=%s".format(
-        #                query_param['pulse'], query['signal'])
-        signal_hash = hashlib.sha512(query_str.encode('utf-8')).hexdigest()
-        printLog("generate hash : " + signal_hash)
 
-        # check whether requested signal exists in lirc-DB
-        lirc_pipe = subprocess.Popen(['irsend', 'LIST', 'jremocon', signal_hash],
-                                      stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE)
-        lirc_stdout, lirc_stderr = lirc_pipe.communicate()
-        lirc_out = (lirc_stdout + lirc_stderr).decode('utf-8')
- 
-        # error check
-        signal_exists = None
+    def send_signal(self, pulse, signal):
+        logger.info('run send_signal: pulse={0}, signal={1}'.format(pulse, signal))
+
+        # generate signal hash
+        hash_seed = signal + str(pulse)
+        signal_hash = hashlib.sha512(hash_seed.encode('utf-8')).hexdigest()
+
+        # check signal existing on DB
+        is_exist = self.has_signal(signal_hash)
+        if is_exist == 0:
+            logger.info('The signal exists on LIRC-DB.')
+        elif is_exist == -1:
+            # add signal to DB
+            logger.info("The signal doesn't exists on LIRC-DB. add it")
+            self.add_signal(pulse, signal, signal_hash)
+        elif is_exist == -2:
+            logger.info("irsend returns no response; LIRC-DB may be broken.")
+            return jsonify(result='failed', message="irsend returns no response; LIRC-DB may be broken.")
+        elif is_exist == -3:
+            logger.info("lircd may not run.")
+            return jsonify(result='failed', message="lircd may not run.")
+        elif is_exist == -4:
+            return jsonify(result='failed', message="irsend returns unexpected error.")
+
+        # send signal
+        # subprocess.Popen(['irsend', 'SEND_ONCE', 'jremocon', signal_hash])
+
+        res_soap  = '<ns:jRemoconResponse xmlns:ns="http://jRemocon">'
+        res_soap += '<ns:return>is;ok</ns:return>'
+        res_soap += '</ns:jRemoconResponse>'
+        return res_soap
+
+    def add_signal(self, pulse, signal, hash):
+        pass
+
+    def has_signal(self, hash):
+        # lirc_pipe = subprocess.Popen(['irsend', 'LIST', 'jremocon', hash],
+        lirc_pipe = subprocess.Popen(['echo', hash],
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE)
+        out, err = lirc_pipe.communicate()
+        lirc_out = (out + err).decode('utf-8')
+
         if lirc_pipe.returncode == 0:
-            signal_exists = True
-        elif 'irsend: unknown command' in lirc_out:
-            # target signal isn't found on lirc-DB
-            signal_exists = False
-        elif lirc_out == "":
-            return io.StringIO(
-                "error: irsend returns no response. lirc-DB may be broken.")
-        elif 'irsend: could not connect to socket' in lirc_out:
-            return io.StringIO('error: lircd may not run.')
-        else:
-            result = io.StringIO()
-            print('error: irsend returns unexpected error:', file=result)
-            print(lirc_out, file=result)
-            return result
-
-        # add signal to DB
-        if signal_exists == False:
-            printLog("target signal isn't found on DB. add it to DB")
-
-            # generate lirc raw_code
-            gen_command = 'signal_string -d | width_array | cut -d" " -f 2-'
-            generate = subprocess.Popen(['bash', '-c', gen_command],
-                        stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-            (stdout, stderr) = generate.communicate(query_str.encode('utf-8'))
-            raw_code = stdout.decode('utf-8')
-
-            # append the code to lircd.conf
-            conf_file = open(conf.lircd_conf, 'r+')
-            new_conf = io.StringIO()
-            for line in conf_file:
-                new_conf.write(line)
-                if 'begin raw_codes' in line:
-                    new_conf.write("name " + signal_hash + "\n")
-                    new_conf.write(raw_code)
-            conf_file.seek(0)
-            conf_file.write(new_conf.getvalue())
-            conf_file.close()
-
-            self.restartLirc(None)
-
-        # send signal with irsend
-        subprocess.Popen(['irsend', 'SEND_ONCE', 'jremocon', signal_hash])
-        return io.StringIO('is;ok')
+            return 0
+        if 'irsend: unknown command' in lirc_out:
+            return -1
+        if lirc_out == "":
+            return -2 # irsend returns no response; lirc-DB may be broken.
+        if 'irsend: could not connect to socket' in lirc_out:
+            return -3 # error: lircd may not run.
+        # unexpected error
+        logger.fatal('irsend returns unexpected error: ' + lirc_out)
+        return -4
 
 
-    def clearCache(self, query_param):
-        """
-        clear lirc's cache DB (/etc/lirc/lircd.conf) and restart lirc daemon.
-        """
-        result = io.StringIO()
-        printLog("clearCache")
-
-        new_conf = io.StringIO()
-        with open(conf.lircd_conf, 'r') as conf_file:
-            isSignal = False
-            for line in conf_file:
-                if 'end raw_codes' in line: isSignal = False
-                if isSignal == False: new_conf.write(line)
-                if 'begin raw_codes' in line: isSignal = True
-        with open(conf.lircd_conf, 'w') as conf_file:
-            # write clean conf
-            conf_file.seek(0)
-            conf_file.write(new_conf.getvalue())
-
-        self.restartLirc(None)
-        print('copy skeleton to original conf.', file=result)
-        return result
+    def clear_DB(self):
+        logger.info('run clear_DB')
+        return jsonify(res='clear')
 
 
-    def restartLirc(self, query_param):
-        """
-        restart lirc daemon.
-        """
-        result = io.StringIO()
-        printLog("restartLirc")
-
-        pidof = subprocess.Popen(['pidof', 'lircd'])
-        pidof.wait()
-        if pidof.returncode == 0:
-            subprocess.check_call(['sudo', 'pkill', 'lircd'])
-        subprocess.check_call(['sudo', 'lircd'])
-
-        print('restart lircd.', file=result)
-        return result
+    def restart_lirc(self):
+        logger.info('run restart_lirc')
+        return jsonify(res='restart')
 
 
-    def showHelp(self, query_param):
-        """
-        show this help message.
-        """
-        printLog("showHelp")
-        result = io.StringIO()
-        for api in self.path_functions:
-            print('- ' + api, file=result, end="")
-            print(textwrap.dedent(self.path_functions[api].__doc__), file=result)
-        return result
+# REST interface ---------------------------------------------------------------
+
+app = jRemocon()
+server = Flask(__name__)
+
+
+@server.route('/jRemocon/', methods=['GET'])
+@server.route('/jRemocon/help', methods=['GET'])
+def api_help():
+    return app.show_help()
+
+
+@server.route('/jRemocon/send', methods=['GET'])
+def api_send():
+    logger.info('get request: send')
+    args = request.args
+
+    # param check: pulse
+    if 'pulse' in args.keys():
+        pulse = args.get('pulse')
+    else:
+        return jsonify(result='error', info='parameter pulse is not found'), 400
+    if pulse.isdigit():
+        pulse = int(pulse)
+    else:
+        return jsonify(result='error', info='parameter pulse is not number'), 400
+
+    # param check: signal
+    if 'signal' in args.keys():
+        signal = args.get('signal')
+    else:
+        return jsonify(result='error', info='parameter signal is not found'), 400
+
+    return app.send_signal(pulse, signal)
+
+
+@server.route('/jRemocon/lirc/clear', methods=['GET'])
+def api_clear():
+    return app.clear_DB()
+
+
+@server.route('/jRemocon/lirc/restart', methods=['GET'])
+def api_restart():
+    return app.restart_lirc()
 
 
 # entry point ------------------------------------------------------------------
+logger = getLogger(__name__)
+handler = StreamHandler()
+handler.setLevel(DEBUG)
+logger.setLevel(DEBUG)
+logger.addHandler(handler)
 
-def printLog(message):
-    if conf.isLog: print("log: " + message)
 
+if __name__ == "__main__":
+    server.run(port=8080, host='0.0.0.0', debug=True)
 
-class Config(object):
-    def loadparam(self, conf_dict, param_name):
-        if param_name in conf_dict:
-            self.__dict__[param_name] = conf_dict[param_name]
-            return True
-        else:
-            return False
-
-script_path = os.path.abspath(os.path.dirname(__file__))
-conf_name = script_path + '/conf/jRemocon.conf'
-conf = Config()
-
-if __name__ == '__main__':
-    # load and check config
-    if len(sys.argv) == 2:
-        conf_name = sys.argv[1]
-    with open(conf_name, 'r') as conf_file:
-        conf_dict = json.loads(conf_file.read())
-        if conf.loadparam(conf_dict, 'isLog') and \
-           conf.loadparam(conf_dict, 'url_prefix') and \
-           conf.loadparam(conf_dict, 'port_num') and \
-           conf.loadparam(conf_dict, 'lircd_conf'): pass
-        else:
-            print("error: load config file failed; lack of parameter.")
-            quit(1)
-
-    # start server
-    application = jRemocon()
-    server = make_server('', conf.port_num, application)
-    signal.signal(signal.SIGINT, lambda n,f : server.shutdown())
-    t = threading.Thread(target=server.serve_forever)
-    printLog("jRemocon start.")
-    t.start()
